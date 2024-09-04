@@ -149,6 +149,22 @@ Visualization Manager:
         Expand Link Details: false
         Expand Tree: false
         Link Tree Style: Links in Alphabetic Order
+      Name: mini_cheetah
+      Robot Description: /mini_cheetah_rviz_urdf_robot_description
+      TF Prefix: mini_cheetah_des
+      Update Interval: 0
+      Value: false
+      Visual Enabled: true
+    - Alpha: 0.5
+      Class: rviz/RobotModel
+      Collision Enabled: false
+      Enabled: false
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        Link Tree Style: Links in Alphabetic Order
       Name: ANYmal (proprietary)
       Robot Description: /anymal_rviz_urdf_robot_description
       TF Prefix: anymal_des

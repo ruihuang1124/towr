@@ -33,6 +33,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <towr/variables/variable_names.h>
 #include <towr/variables/spline.h> // for Spline::GetSegmentID()
+#include "iostream"
 
 
 namespace towr {
