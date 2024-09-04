@@ -40,14 +40,14 @@ namespace towr {
 Parameters::Parameters ()
 {
   // constructs optimization variables
-  duration_base_polynomial_ = 0.05;
+  duration_base_polynomial_ = 0.1;
   force_polynomials_per_stance_phase_ = 3;
   ee_polynomials_per_swing_phase_ = 2; // so step can at least lift leg
 
   // parameters related to specific constraints (only used when it is added as well)
   force_limit_in_normal_direction_ = 1000;
   dt_constraint_range_of_motion_ = 0.08;
-  dt_constraint_dynamic_ = 0.05;
+  dt_constraint_dynamic_ = 0.1;
   dt_constraint_base_motion_ = duration_base_polynomial_/4.; // only for base RoM constraint
   bound_phase_duration_ = std::make_pair(0.2, 1.0);  // used only when optimizing phase durations, so gait
 

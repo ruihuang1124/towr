@@ -57,6 +57,9 @@ TowrRosInterface::TowrRosInterface ()
   robot_parameters_pub_  = n.advertise<xpp_msgs::RobotParameters>
                                     (xpp_msgs::robot_parameters, 1);
 
+  planned_trajectory_pub_  = n.advertise<xpp_msgs::RobotStateCartesianTrajectory>
+            (xpp_msgs::robot_trajectory_desired, 1);
+
   solver_ = std::make_shared<ifopt::IpoptSolver>();
 
   visualization_dt_ = 0.01;
@@ -127,7 +130,10 @@ TowrRosInterface::UserCommandCallback(const TowrCommandMsg& msg)
   }
 
   // to publish entire trajectory (e.g. to send to controller)
-  // xpp_msgs::RobotStateCartesianTrajectory xpp_msg = xpp::Convert::ToRos(GetTrajectory());
+//  double t = 0.0;
+//    solution.base_angular_->GetPoint(t);
+  xpp_msgs::RobotStateCartesianTrajectory xpp_msg = xpp::Convert::ToRos(GetTrajectory());
+  planned_trajectory_pub_.publish(xpp_msg);
 }
 
 void
