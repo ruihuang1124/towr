@@ -57,6 +57,11 @@ BipedGaitGenerator::SetCombo (Combos combo)
     case C2: SetGaits({Stand, Hop1, Hop1, Hop1, Stand});       break;
     case C3: SetGaits({Stand, Hop1, Hop2, Hop2, Stand});       break;
     case C4: SetGaits({Stand, Hop5, Hop5, Hop5, Stand});       break;
+    case C5: SetGaits({Stand, Walk1, Run1, Hop1, Stand});       break;
+    case C6: SetGaits({Stand, Walk1, Run1, Hop1, Stand});       break;
+    case C7: SetGaits({Stand, Walk1, Run1, Hop1, Stand});       break;
+    case C8: SetGaits({Stand, Walk1, Run1, Hop1, Stand});       break;
+    case C9: SetGaits({Stand, Walk1, Run1, Hop1, Stand});       break;
     default: assert(false); std::cout << "Gait not defined\n"; break;
   }
 }

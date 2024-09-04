@@ -82,6 +82,11 @@ QuadrupedGaitGenerator::SetCombo (Combos combo)
     case C2: SetGaits({Stand, Run3, Run3, Run3, Run3E, Stand}); break; // pace
     case C3: SetGaits({Stand, Hop1, Hop1, Hop1, Hop1E, Stand}); break; // bound
     case C4: SetGaits({Stand, Hop3, Hop3, Hop3, Hop3E, Stand}); break; // gallop
+    case C5: SetGaits({Stand, Walk2, Walk2, Walk2, Walk2, Walk2, Walk2E, Stand}); break; // test gait
+    case C6: SetGaits({Stand, Run2, Run2, Run2, Run2, Run2, Run2, Run2E, Stand}); break; // test gait
+    case C7: SetGaits({Stand, Hop1, Hop1, Hop1, Hop1, Hop1, Hop1, Hop1E, Stand}); break; // test gait
+    case C8: SetGaits({Stand, Hop2, Hop2, Hop2, Hop2, Hop2, Hop2, Hop2, Stand}); break; // test gait
+    case C9: SetGaits({Stand, Hop3, Hop3, Hop3, Hop3, Hop3, Hop3, Hop3E, Stand}); break; // test gait
     default: assert(false); std::cout << "Gait not defined\n"; break;
   }
 }

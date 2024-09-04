@@ -55,7 +55,7 @@ public:
   /**
    * @brief Predefined combinations of different strides.
    */
-  enum Combos { C0, C1, C2, C3, C4, COMBO_COUNT};
+  enum Combos { C0, C1, C2, C3, C4, C5, C6, C7, C8, C9, COMBO_COUNT};
 
   /**
    * @brief Predefined strides, each with a different gait diagram.
