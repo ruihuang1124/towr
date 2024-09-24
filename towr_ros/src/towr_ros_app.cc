@@ -57,6 +57,35 @@ public:
     formulation_.initial_base_.lin.at(kPos).z() = - nominal_stance_B.front().z() + z_ground;
   }
 
+    /**
+   * @brief Sets the actual feet and base pose.
+   */
+    void SetActualInitialState() override
+    {
+        formulation_.initial_base_.lin.at(kPos).z() = robot_states_msgs_.body.pose.position.z;
+        formulation_.initial_base_.lin.at(kPos).x() = robot_states_msgs_.body.pose.position.x;
+        formulation_.initial_base_.lin.at(kPos).y() = robot_states_msgs_.body.pose.position.y;
+        xpp::Quaterniond q;
+        q.x() = robot_states_msgs_.body.pose.orientation.x;
+        q.y() = robot_states_msgs_.body.pose.orientation.y;
+        q.z() = robot_states_msgs_.body.pose.orientation.z;
+        q.w() = robot_states_msgs_.body.pose.orientation.w;
+        Vector3d euler = xpp::GetEulerZYXAngles(q);
+        formulation_.initial_base_.ang.at(kPos).z() = euler[0];
+        auto nominal_stance_B = formulation_.model_.kinematic_model_->GetNominalStanceInBase();
+//        for (int i = 0; i < 4; ++i) {
+//            nominal_stance_B.at(i)[0] = robot_states_msgs_.feet.feet.at(i).position.x;
+//            nominal_stance_B.at(i)[1] = robot_states_msgs_.feet.feet.at(i).position.y;
+//            nominal_stance_B.at(i)[2] = robot_states_msgs_.feet.feet.at(i).position.z;
+//        }
+
+        double z_ground = 0.0;
+        formulation_.initial_ee_W_ =  nominal_stance_B;
+        std::for_each(formulation_.initial_ee_W_.begin(), formulation_.initial_ee_W_.end(),
+                      [&](Vector3d& p){ p.z() = z_ground; } // feet at 0 height
+        );
+    }
+
   /**
    * @brief Sets the parameters required to formulate the TOWR problem.
    */

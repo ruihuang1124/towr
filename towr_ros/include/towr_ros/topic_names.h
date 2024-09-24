@@ -43,6 +43,9 @@ static const std::string nlp_iterations_count("/towr/nlp_iterations_count");
 // the base topic names of each nlp iteration
 static const std::string nlp_iterations_name("/towr/nlp_iterations_name");
 
+// the topic of current robot states
+static const std::string robot_states_name("/test/robot_state");
+
 } // namespace towr_msgs
 
 

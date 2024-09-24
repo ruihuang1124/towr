@@ -42,6 +42,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <towr/nlp_formulation.h>
 #include <ifopt/ipopt_solver.h>
+#include "quad_msgs/RobotState.h"
 
 
 namespace towr {
@@ -59,6 +60,7 @@ public:
   using XppVec         = std::vector<xpp::RobotStateCartesian>;
   using TowrCommandMsg = towr_ros::TowrCommand;
   using Vector3d       = Eigen::Vector3d;
+    using TowrRobotStates = quad_msgs::RobotState;
 
 protected:
   TowrRosInterface ();
@@ -68,6 +70,11 @@ protected:
    * @brief Sets the base state and end-effector position.
    */
   virtual void SetTowrInitialState() = 0;
+
+    /**
+   * @brief Set actual initial pose and end-effector position.
+   */
+    virtual void SetActualInitialState() = 0;
 
   /**
    * @brief Formulates the actual TOWR problem to be solved
@@ -86,24 +93,35 @@ protected:
 
   NlpFormulation formulation_;         ///< the default formulation, can be adapted
   ifopt::IpoptSolver::Ptr solver_; ///< NLP solver, could also use SNOPT.
+  TowrRobotStates robot_states_msgs_;
 
 private:
   SplineHolder solution; ///< the solution splines linked to the opt-variables.
   ifopt::Problem nlp_;   ///< the actual nonlinear program to be solved.
   double visualization_dt_; ///< duration between two rviz visualization states.
+//  Vector3d states_angular_;
+std::vector<double> states_angular_roll_, states_angular_pitch_, states_angular_yaw_;
+//  double states_angular_roll_, states_angular_pitch_, states_angular_yaw_;
 
   ::ros::Subscriber user_command_sub_;
   ::ros::Publisher initial_state_pub_;
   ::ros::Publisher robot_parameters_pub_;
   ::ros::Publisher planned_trajectory_pub_;
+  ::ros::Subscriber robot_state_sub_;
 
   void UserCommandCallback(const TowrCommandMsg& msg);
+  void RobotStatesCallback(const TowrRobotStates& msg);
   XppVec GetTrajectory() const;
+  void GetTrajectoryAng();
   virtual BaseState GetGoalState(const TowrCommandMsg& msg) const;
   void PublishInitialState();
   std::vector<XppVec>GetIntermediateSolutions();
   xpp_msgs::RobotParameters BuildRobotParametersMsg(const RobotModel& model) const;
   void SaveOptimizationAsRosbag(const std::string& bag_name,
+                                const xpp_msgs::RobotParameters& robot_params,
+                                const TowrCommandMsg user_command_msg,
+                                bool include_iterations=false);
+    void SaveOptimizationAsCSV(const std::string& state_post_csv_file, const std::string& contact_post_csv_file,
                                 const xpp_msgs::RobotParameters& robot_params,
                                 const TowrCommandMsg user_command_msg,
                                 bool include_iterations=false);

@@ -60,7 +60,12 @@ TowrRosInterface::TowrRosInterface ()
   planned_trajectory_pub_  = n.advertise<xpp_msgs::RobotStateCartesianTrajectory>
             (xpp_msgs::robot_trajectory_desired, 1);
 
+  robot_state_sub_ = n.subscribe(towr_msgs::robot_states_name, 1,
+                                    &TowrRosInterface::RobotStatesCallback, this);
+
   solver_ = std::make_shared<ifopt::IpoptSolver>();
+  robot_states_msgs_.body.pose.position.z = 0.29;
+  robot_states_msgs_.body.pose.orientation.w = 1.0;
 
   visualization_dt_ = 0.01;
 }
@@ -70,10 +75,18 @@ TowrRosInterface::GetGoalState(const TowrCommandMsg& msg) const
 {
   BaseState goal;
   goal.lin.at(kPos) = xpp::Convert::ToXpp(msg.goal_lin.pos);
+  goal.lin.at(kPos).x() += robot_states_msgs_.body.pose.position.x;
+  goal.lin.at(kPos).y() += robot_states_msgs_.body.pose.position.y;
   goal.lin.at(kVel) = xpp::Convert::ToXpp(msg.goal_lin.vel);
   goal.ang.at(kPos) = xpp::Convert::ToXpp(msg.goal_ang.pos);
+    xpp::Quaterniond q;
+    q.x() = robot_states_msgs_.body.pose.orientation.x;
+    q.y() = robot_states_msgs_.body.pose.orientation.y;
+    q.z() = robot_states_msgs_.body.pose.orientation.z;
+    q.w() = robot_states_msgs_.body.pose.orientation.w;
+  Vector3d euler = xpp::GetEulerZYXAngles(q);
+  goal.ang.at(kPos).z() += euler[0];
   goal.ang.at(kVel) = xpp::Convert::ToXpp(msg.goal_ang.vel);
-
   return goal;
 }
 
@@ -95,6 +108,11 @@ TowrRosInterface::UserCommandCallback(const TowrCommandMsg& msg)
 
   SetTowrInitialState();
 
+//    if (msg.robot == 4){ // mini_cheetah
+//        ROS_WARN("MiniCheetah!");
+//        SetActualInitialState();
+//    }
+
   // solver parameters
   SetIpoptParameters(msg);
 
@@ -103,7 +121,9 @@ TowrRosInterface::UserCommandCallback(const TowrCommandMsg& msg)
 
   // Defaults to /home/user/.ros/
   std::string bag_file = "towr_trajectory.bag";
-  if (msg.optimize || msg.play_initialization) {
+  std::string state_pose_csv_file = "state_post.csv";
+  std::string contact_post_csv_file = "contact_post.csv";
+    if (msg.optimize || msg.play_initialization) {
     nlp_ = ifopt::Problem();
     for (auto c : formulation_.GetVariableSets(solution))
       nlp_.AddVariableSet(c);
@@ -114,6 +134,10 @@ TowrRosInterface::UserCommandCallback(const TowrCommandMsg& msg)
 
     solver_->Solve(nlp_);
     SaveOptimizationAsRosbag(bag_file, robot_params_msg, msg, false);
+    if (msg.robot == 4){ // mini_cheetah
+        ROS_WARN("MiniCheetah!");
+        SaveOptimizationAsCSV(state_pose_csv_file, contact_post_csv_file, robot_params_msg, msg, false);
+    }
   }
 
   // playback using terminal commands
@@ -134,6 +158,11 @@ TowrRosInterface::UserCommandCallback(const TowrCommandMsg& msg)
 //    solution.base_angular_->GetPoint(t);
   xpp_msgs::RobotStateCartesianTrajectory xpp_msg = xpp::Convert::ToRos(GetTrajectory());
   planned_trajectory_pub_.publish(xpp_msg);
+}
+
+void TowrRosInterface::RobotStatesCallback(const towr::TowrRosInterface::TowrRobotStates &msg) {
+//    ROS_WARN("Received robot states!");
+    robot_states_msgs_ = msg;
 }
 
 void
@@ -202,6 +231,23 @@ TowrRosInterface::GetTrajectory () const
   return trajectory;
 }
 
+    void TowrRosInterface::GetTrajectoryAng() {
+        states_angular_roll_.clear();
+        states_angular_pitch_.clear();
+        states_angular_yaw_.clear();
+        double t = 0.0;
+        double T = solution.base_linear_->GetTotalTime();
+        EulerConverter base_angular(solution.base_angular_);
+        while (t <= T + 1e-5) {
+            auto states_ang = ToXpp(solution.base_angular_->GetPoint(t));
+            states_angular_roll_.push_back(states_ang.p_[0]);
+            states_angular_pitch_.push_back(states_ang.p_[1]);
+            states_angular_yaw_.push_back(states_ang.p_[2]);
+            t += visualization_dt_;
+        }
+
+    }
+
 xpp_msgs::RobotParameters
 TowrRosInterface::BuildRobotParametersMsg(const RobotModel& model) const
 {
@@ -255,6 +301,190 @@ TowrRosInterface::SaveOptimizationAsRosbag (const std::string& bag_name,
 
   bag.close();
 }
+
+    void TowrRosInterface::SaveOptimizationAsCSV(const std::string &state_post_csv_file,
+                                                 const std::string &contact_post_csv_file,
+                                                 const xpp_msgs::RobotParameters &robot_params,
+                                                 const towr::TowrRosInterface::TowrCommandMsg user_command_msg,
+                                                 bool include_iterations) {
+        // get the optimized trajectory first
+        auto final_trajectory = GetTrajectory();
+        GetTrajectoryAng();
+        int row = final_trajectory.size();
+
+        // analise the trajectory and get the horizons vector
+        std::vector<int> horizons;
+        int horizon = 1;
+        for (int i = 0; i < row - 1; i = i + 1) {
+            std::vector<int> current_contact, next_contact;
+            for (int leg = 0; leg < 4; ++leg) {
+                int contact_current = 0, contact_next = 0;
+                if (final_trajectory.at(i).ee_contact_.at(leg) == 1) {
+                    contact_current = 1;
+                }
+                if (final_trajectory.at(i + 1).ee_contact_.at(leg) == 1) {
+                    contact_next = 1;
+                }
+                current_contact.push_back(contact_current);
+                next_contact.push_back(contact_next);
+            }
+            if (current_contact.at(0) == next_contact.at(0) && current_contact.at(1) == next_contact.at(1) &&
+                current_contact.at(2) == next_contact.at(2) && current_contact.at(3) == next_contact.at(3)) {
+                horizon += 1;
+            } else {
+                horizons.push_back(horizon);
+                horizon = 1;
+            }
+            if (i == row - 2) {
+                horizons.push_back(horizon);
+            }
+        }
+
+        // Save the contact file first
+        std::ofstream dataFile;
+        dataFile.open(contact_post_csv_file, std::ios::out | std::ios::trunc);
+        dataFile << "FR" << "," << "RL" << "," << "HR" << "," << "HL" << "," << "startTime" << "," << "endTime" << ","
+                 << "horizon" << std::endl;
+        int current_trajectory_point_index_for_contact = 0;
+        for (int i = 0; i < horizons.size(); i++) {
+            current_trajectory_point_index_for_contact += horizons.at(i);
+            dataFile << final_trajectory.at(current_trajectory_point_index_for_contact - 1).ee_contact_.at(RF) << ",";
+            dataFile << final_trajectory.at(current_trajectory_point_index_for_contact - 1).ee_contact_.at(LF) << ",";
+            dataFile << final_trajectory.at(current_trajectory_point_index_for_contact - 1).ee_contact_.at(RH) << ",";
+            dataFile << final_trajectory.at(current_trajectory_point_index_for_contact - 1).ee_contact_.at(LH) << ",";
+            dataFile << final_trajectory.at(current_trajectory_point_index_for_contact - horizons.at(i)).t_global_
+                     << ",";
+            if (i == horizons.size() - 1) {
+                dataFile << final_trajectory.at(current_trajectory_point_index_for_contact - 1).t_global_ + 0.01 << ",";
+            } else {
+                dataFile << final_trajectory.at(current_trajectory_point_index_for_contact).t_global_ << ",";
+            }
+
+            dataFile << horizons.at(i) << ",";
+            dataFile << std::endl;
+        }
+        dataFile.close();
+
+        // Save the optimized states as csv file, swing leg's joints are set as default values.
+        dataFile.open(state_post_csv_file, std::ios::out | std::ios::trunc);
+//        dataFile << "phase" << "," << "roll" << "," << "pitch" << "," << "yaw" << "," << "x" << "," << "y" << "," << "z" << ","
+//                 << "omega_x"
+//                 << "," << "omega_y" << "," << "omega_z" << "," << "v_x" << "," << "v_y" << "," << "v_z" << ","<< "q_dummy_1"
+//                 << "," << "q_dummy_2" << "," << "q_dummy_3" << "," << "q_dummy_4" << "," << "q_dummy_5" << ","
+//                 << "q_dummy_6" << ","
+//                 << "q_dummy_7"
+//                 << "," << "q_dummy_8" << "," << "q_dummy_9" << "," << "q_dummy_10" << "," << "q_dummy_11" << ","
+//                 << "q_dummy_12" << std::endl;
+//        for (int i = 0; i < row; i = i + 1) {
+//            dataFile << states_angular_roll_.at(i) << ",";
+//            dataFile << states_angular_pitch_.at(i) << ",";
+//            dataFile << states_angular_yaw_.at(i) << ",";
+//            dataFile << final_trajectory.at(i).base_.lin.p_[0] << ",";
+//            dataFile << final_trajectory.at(i).base_.lin.p_[1] << ",";
+//            dataFile << final_trajectory.at(i).base_.lin.p_[2] << ",";
+//            dataFile << final_trajectory.at(i).base_.ang.w[0] << ",";
+//            dataFile << final_trajectory.at(i).base_.ang.w[1] << ",";
+//            dataFile << final_trajectory.at(i).base_.ang.w[2] << ",";
+//            dataFile << final_trajectory.at(i).base_.lin.v_[0] << ",";
+//            dataFile << final_trajectory.at(i).base_.lin.v_[1] << ",";
+//            dataFile << final_trajectory.at(i).base_.lin.v_[2] << ",";
+//            dataFile << std::endl;
+//        }
+
+        int current_trajectory_point_index = 0, current_phase_start_index = 0;
+        for (int i = 0; i < horizons.size(); i++) {     // loop through all phases
+            for (int j = 0; j <= horizons.at(i); ++j) {  // loop inside phase.
+                if (i == 0){
+                    current_trajectory_point_index = current_phase_start_index + j;
+                } else{
+                    current_trajectory_point_index = current_phase_start_index + j - 1;
+                }
+                dataFile << i << ",";
+                dataFile << states_angular_roll_.at(current_trajectory_point_index) << ",";
+                dataFile << states_angular_pitch_.at(current_trajectory_point_index) << ",";
+                dataFile << states_angular_yaw_.at(current_trajectory_point_index) << ",";
+                dataFile << final_trajectory.at(current_trajectory_point_index).base_.lin.p_[0] << ",";
+                dataFile << final_trajectory.at(current_trajectory_point_index).base_.lin.p_[1] << ",";
+                dataFile << final_trajectory.at(current_trajectory_point_index).base_.lin.p_[2] << ",";
+                dataFile << final_trajectory.at(current_trajectory_point_index).base_.ang.w[0]
+                         << ","; //TODO w or w_world?
+                dataFile << final_trajectory.at(current_trajectory_point_index).base_.ang.w[1] << ",";
+                dataFile << final_trajectory.at(current_trajectory_point_index).base_.ang.w[2] << ",";
+                dataFile << final_trajectory.at(current_trajectory_point_index).base_.lin.v_[0] << ",";
+                dataFile << final_trajectory.at(current_trajectory_point_index).base_.lin.v_[1] << ",";
+                dataFile << final_trajectory.at(current_trajectory_point_index).base_.lin.v_[2] << ",";
+
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RF) == 1) ? dataFile
+                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RF).p_[0] << "," :
+                dataFile
+                        << 0.0 << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RF) == 1) ? dataFile
+                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RF).p_[1] << "," :
+                dataFile
+                        << -0.8 << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RF) == 1) ? dataFile
+                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RF).p_[2] << "," :
+                dataFile
+                        << 1.6 << ",";
+
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LF) == 1) ? dataFile
+                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LF).p_[0] << "," :
+                dataFile
+                        << 0.0 << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LF) == 1) ? dataFile
+                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LF).p_[1] << "," :
+                dataFile
+                        << -0.8 << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LF) == 1) ? dataFile
+                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LF).p_[2] << "," :
+                dataFile
+                        << 1.6 << ",";
+
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RH) == 1) ? dataFile
+                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RH).p_[0] << "," :
+                dataFile
+                        << 0.0 << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RH) == 1) ? dataFile
+                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RH).p_[1] << "," :
+                dataFile
+                        << -0.8 << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RH) == 1) ? dataFile
+                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RH).p_[2] << "," :
+                dataFile
+                        << 1.6 << ",";
+
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LH) == 1) ? dataFile
+                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LH).p_[0] << "," :
+                dataFile
+                        << 0.0 << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LH) == 1) ? dataFile
+                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LH).p_[1] << "," :
+                dataFile
+                        << -0.8 << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LH) == 1) ? dataFile
+                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LH).p_[2] << "," :
+                dataFile
+                        << 1.6 << ",";
+//                for (int leg = 0; leg < 4; ++leg) {
+//                    (final_trajectory.at(current_trajectory_point_index).ee_contact_.at(leg) == 1) ? dataFile
+//                            << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(leg).p_[0] << "," :
+//                    dataFile
+//                            << 0.0 << ",";
+//                    (final_trajectory.at(current_trajectory_point_index).ee_contact_.at(leg) == 1) ? dataFile
+//                            << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(leg).p_[1] << "," :
+//                    dataFile
+//                            << -0.8 << ",";
+//                    (final_trajectory.at(current_trajectory_point_index).ee_contact_.at(leg) == 1) ? dataFile
+//                            << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(leg).p_[2] << "," :
+//                    dataFile
+//                            << 1.6 << ",";
+//                }
+                dataFile << std::endl;
+            }
+            current_phase_start_index += horizons.at(i);
+        }
+        dataFile.close();
+    }
 
 void
 TowrRosInterface::SaveTrajectoryInRosbag (rosbag::Bag& bag,

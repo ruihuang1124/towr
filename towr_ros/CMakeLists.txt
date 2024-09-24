@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   xpp_msgs
   xpp_states
   towr
+        quad_msgs
 )
 
 
@@ -27,7 +28,7 @@ generate_messages( DEPENDENCIES std_msgs xpp_msgs )
 catkin_package(
    INCLUDE_DIRS include
    LIBRARIES ${PROJECT_NAME}
-   CATKIN_DEPENDS xpp_states roscpp
+   CATKIN_DEPENDS xpp_states roscpp quad_msgs
    DEPENDS towr
 )
 
