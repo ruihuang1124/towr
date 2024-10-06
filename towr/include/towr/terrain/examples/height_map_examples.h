@@ -94,7 +94,7 @@ public:
 
 private:
   const double gap_start_ = 1.0;
-  const double w = 0.5;
+  const double w = 0.1;
   const double h = 1.5;
 
   const double slope_ = h/w;

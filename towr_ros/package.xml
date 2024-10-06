@@ -28,6 +28,7 @@
   <depend>roscpp</depend>
   <depend>rosbag</depend>
   <depend>xpp_states</depend>
+  <depend>xpp_vis</depend>
   <depend>xpp_msgs</depend>
   <depend>quad_msgs</depend>
   <depend>towr</depend>

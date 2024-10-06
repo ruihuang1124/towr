@@ -68,6 +68,9 @@ TowrRosInterface::TowrRosInterface ()
   robot_states_msgs_.body.pose.orientation.w = 1.0;
 
   visualization_dt_ = 0.01;
+
+    mini_cheetah_inverse_kinematics_ = std::make_shared<MiniCheetahInverseKinematics>();
+    arcdog_inverse_kinematics_ = std::make_shared<ArcDogInverseKinematics>();
 }
 
 BaseState
@@ -75,17 +78,17 @@ TowrRosInterface::GetGoalState(const TowrCommandMsg& msg) const
 {
   BaseState goal;
   goal.lin.at(kPos) = xpp::Convert::ToXpp(msg.goal_lin.pos);
-  goal.lin.at(kPos).x() += robot_states_msgs_.body.pose.position.x;
-  goal.lin.at(kPos).y() += robot_states_msgs_.body.pose.position.y;
+//  goal.lin.at(kPos).x() += robot_states_msgs_.body.pose.position.x;
+//  goal.lin.at(kPos).y() += robot_states_msgs_.body.pose.position.y;
   goal.lin.at(kVel) = xpp::Convert::ToXpp(msg.goal_lin.vel);
   goal.ang.at(kPos) = xpp::Convert::ToXpp(msg.goal_ang.pos);
-    xpp::Quaterniond q;
-    q.x() = robot_states_msgs_.body.pose.orientation.x;
-    q.y() = robot_states_msgs_.body.pose.orientation.y;
-    q.z() = robot_states_msgs_.body.pose.orientation.z;
-    q.w() = robot_states_msgs_.body.pose.orientation.w;
-  Vector3d euler = xpp::GetEulerZYXAngles(q);
-  goal.ang.at(kPos).z() += euler[0];
+//    xpp::Quaterniond q;
+//    q.x() = robot_states_msgs_.body.pose.orientation.x;
+//    q.y() = robot_states_msgs_.body.pose.orientation.y;
+//    q.z() = robot_states_msgs_.body.pose.orientation.z;
+//    q.w() = robot_states_msgs_.body.pose.orientation.w;
+//  Vector3d euler = xpp::GetEulerZYXAngles(q);
+//  goal.ang.at(kPos).z() += euler[0];
   goal.ang.at(kVel) = xpp::Convert::ToXpp(msg.goal_ang.vel);
   return goal;
 }
@@ -108,7 +111,7 @@ TowrRosInterface::UserCommandCallback(const TowrCommandMsg& msg)
 
   SetTowrInitialState();
 
-//    if (msg.robot == 4){ // mini_cheetah
+//    if (msg.robot == 4 || msg.robot == 5){ // mini_cheetah
 //        ROS_WARN("MiniCheetah!");
 //        SetActualInitialState();
 //    }
@@ -121,8 +124,10 @@ TowrRosInterface::UserCommandCallback(const TowrCommandMsg& msg)
 
   // Defaults to /home/user/.ros/
   std::string bag_file = "towr_trajectory.bag";
-  std::string state_pose_csv_file = "state_post.csv";
-  std::string contact_post_csv_file = "contact_post.csv";
+  std::string mini_cheetah_state_pose_csv_file = "/home/ray/log/state_post_mini_cheetah.csv";
+  std::string mini_cheetah_contact_post_csv_file = "/home/ray/log/contact_post_mini_cheetah.csv";
+    std::string arcdog_state_pose_csv_file = "/home/ray/log/state_post_arcdog.csv";
+    std::string arcdog_contact_post_csv_file = "/home/ray/log/contact_post_arcdog.csv";
     if (msg.optimize || msg.play_initialization) {
     nlp_ = ifopt::Problem();
     for (auto c : formulation_.GetVariableSets(solution))
@@ -135,8 +140,11 @@ TowrRosInterface::UserCommandCallback(const TowrCommandMsg& msg)
     solver_->Solve(nlp_);
     SaveOptimizationAsRosbag(bag_file, robot_params_msg, msg, false);
     if (msg.robot == 4){ // mini_cheetah
-        ROS_WARN("MiniCheetah!");
-        SaveOptimizationAsCSV(state_pose_csv_file, contact_post_csv_file, robot_params_msg, msg, false);
+        ROS_WARN("MiniCheetah!!!!");
+        SaveOptimizationAsCSV(mini_cheetah_state_pose_csv_file, mini_cheetah_contact_post_csv_file, robot_params_msg, msg, false);
+    } else if (msg.robot == 5){
+        ROS_WARN("ArcDog!!!!");
+        SaveOptimizationAsCSV(arcdog_state_pose_csv_file, arcdog_contact_post_csv_file, robot_params_msg, msg, true);
     }
   }
 
@@ -156,8 +164,8 @@ TowrRosInterface::UserCommandCallback(const TowrCommandMsg& msg)
   // to publish entire trajectory (e.g. to send to controller)
 //  double t = 0.0;
 //    solution.base_angular_->GetPoint(t);
-  xpp_msgs::RobotStateCartesianTrajectory xpp_msg = xpp::Convert::ToRos(GetTrajectory());
-  planned_trajectory_pub_.publish(xpp_msg);
+//  xpp_msgs::RobotStateCartesianTrajectory xpp_msg = xpp::Convert::ToRos(GetTrajectory());
+//  planned_trajectory_pub_.publish(xpp_msg);
 }
 
 void TowrRosInterface::RobotStatesCallback(const towr::TowrRosInterface::TowrRobotStates &msg) {
@@ -311,6 +319,37 @@ TowrRosInterface::SaveOptimizationAsRosbag (const std::string& bag_name,
         auto final_trajectory = GetTrajectory();
         GetTrajectoryAng();
         int row = final_trajectory.size();
+        Eigen::MatrixXd q_trajectory(row,12);
+
+//        auto mini_cheetah_ik = std::make_shared<xpp::InverseKinematicsMiniCheetah>();
+        int steps = 0;
+        for (const auto state : final_trajectory) {
+            xpp_msgs::RobotStateCartesian msg;
+            msg = xpp::Convert::ToRos(state);
+            auto cart = xpp::Convert::ToXpp(msg);
+            // transform feet from world -> base frame
+            Eigen::Matrix3d B_R_W = cart.base_.ang.q.normalized().toRotationMatrix().inverse();
+            xpp::EndeffectorsPos ee_B(cart.ee_motion_.GetEECount());
+            for (auto ee : ee_B.GetEEsOrdered())
+                ee_B.at(ee) = B_R_W * (cart.ee_motion_.at(ee).p_ - cart.base_.lin.p_);
+//            Eigen::VectorXd q =  mini_cheetah_ik->GetAllJointAngles(ee_B).ToVec();
+
+            if (include_iterations){
+                Eigen::VectorXd q =  arcdog_inverse_kinematics_->GetAllJointAngles(ee_B).ToVec();
+                for (int i = 0; i < 12; ++i) {
+                    q_trajectory(steps,i) = q(i);
+                }
+            } else{
+                Eigen::VectorXd q =  mini_cheetah_inverse_kinematics_->GetAllJointAngles(ee_B).ToVec();
+                for (int i = 0; i < 12; ++i) {
+                    q_trajectory(steps,i) = q(i);
+                }
+            }
+            steps++;
+        }
+        std::cout<<"here after getting the q trajectory!\n";
+
+
 
         // analise the trajectory and get the horizons vector
         std::vector<int> horizons;
@@ -414,71 +453,85 @@ TowrRosInterface::SaveOptimizationAsRosbag (const std::string& bag_name,
                 dataFile << final_trajectory.at(current_trajectory_point_index).base_.lin.v_[1] << ",";
                 dataFile << final_trajectory.at(current_trajectory_point_index).base_.lin.v_[2] << ",";
 
-                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RF) == 1) ? dataFile
-                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RF).p_[0] << "," :
-                dataFile
-                        << 0.0 << ",";
-                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RF) == 1) ? dataFile
-                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RF).p_[1] << "," :
-                dataFile
-                        << -0.8 << ",";
-                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RF) == 1) ? dataFile
-                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RF).p_[2] << "," :
-                dataFile
-                        << 1.6 << ",";
+//                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RF) == 1) ? dataFile
+//                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RF).p_[0] << "," :
+//                dataFile
+//                        << 0.0 << ",";
+//                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RF) == 1) ? dataFile
+//                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RF).p_[1] << "," :
+//                dataFile
+//                        << -0.8 << ",";
+//                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RF) == 1) ? dataFile
+//                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RF).p_[2] << "," :
+//                dataFile
+//                        << 1.6 << ",";
+//
+//                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LF) == 1) ? dataFile
+//                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LF).p_[0] << "," :
+//                dataFile
+//                        << 0.0 << ",";
+//                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LF) == 1) ? dataFile
+//                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LF).p_[1] << "," :
+//                dataFile
+//                        << -0.8 << ",";
+//                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LF) == 1) ? dataFile
+//                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LF).p_[2] << "," :
+//                dataFile
+//                        << 1.6 << ",";
+//
+//                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RH) == 1) ? dataFile
+//                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RH).p_[0] << "," :
+//                dataFile
+//                        << 0.0 << ",";
+//                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RH) == 1) ? dataFile
+//                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RH).p_[1] << "," :
+//                dataFile
+//                        << -0.8 << ",";
+//                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RH) == 1) ? dataFile
+//                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RH).p_[2] << "," :
+//                dataFile
+//                        << 1.6 << ",";
+//
+//                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LH) == 1) ? dataFile
+//                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LH).p_[0] << "," :
+//                dataFile
+//                        << 0.0 << ",";
+//                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LH) == 1) ? dataFile
+//                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LH).p_[1] << "," :
+//                dataFile
+//                        << -0.8 << ",";
+//                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LH) == 1) ? dataFile
+//                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LH).p_[2] << "," :
+//                dataFile
+//                        << 1.6 << ",";
 
-                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LF) == 1) ? dataFile
-                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LF).p_[0] << "," :
-                dataFile
-                        << 0.0 << ",";
-                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LF) == 1) ? dataFile
-                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LF).p_[1] << "," :
-                dataFile
-                        << -0.8 << ",";
-                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LF) == 1) ? dataFile
-                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LF).p_[2] << "," :
-                dataFile
-                        << 1.6 << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RF) == 1) ? dataFile << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RF).p_[0] << "," :
+                dataFile << q_trajectory(current_trajectory_point_index,3 + 0) << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RF) == 1) ? dataFile << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RF).p_[1] << "," :
+                dataFile << -q_trajectory(current_trajectory_point_index,3 + 1) << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RF) == 1) ? dataFile << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RF).p_[2] << "," :
+                dataFile << -q_trajectory(current_trajectory_point_index,3 + 2) << ",";
 
-                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RH) == 1) ? dataFile
-                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RH).p_[0] << "," :
-                dataFile
-                        << 0.0 << ",";
-                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RH) == 1) ? dataFile
-                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RH).p_[1] << "," :
-                dataFile
-                        << -0.8 << ",";
-                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RH) == 1) ? dataFile
-                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RH).p_[2] << "," :
-                dataFile
-                        << 1.6 << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LF) == 1) ? dataFile << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LF).p_[0] << "," :
+                dataFile << q_trajectory(current_trajectory_point_index,0) << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LF) == 1) ? dataFile << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LF).p_[1] << "," :
+                dataFile << -q_trajectory(current_trajectory_point_index,1) << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LF) == 1) ? dataFile << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LF).p_[2] << "," :
+                dataFile << -q_trajectory(current_trajectory_point_index,2) << ",";
 
-                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LH) == 1) ? dataFile
-                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LH).p_[0] << "," :
-                dataFile
-                        << 0.0 << ",";
-                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LH) == 1) ? dataFile
-                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LH).p_[1] << "," :
-                dataFile
-                        << -0.8 << ",";
-                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LH) == 1) ? dataFile
-                        << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LH).p_[2] << "," :
-                dataFile
-                        << 1.6 << ",";
-//                for (int leg = 0; leg < 4; ++leg) {
-//                    (final_trajectory.at(current_trajectory_point_index).ee_contact_.at(leg) == 1) ? dataFile
-//                            << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(leg).p_[0] << "," :
-//                    dataFile
-//                            << 0.0 << ",";
-//                    (final_trajectory.at(current_trajectory_point_index).ee_contact_.at(leg) == 1) ? dataFile
-//                            << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(leg).p_[1] << "," :
-//                    dataFile
-//                            << -0.8 << ",";
-//                    (final_trajectory.at(current_trajectory_point_index).ee_contact_.at(leg) == 1) ? dataFile
-//                            << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(leg).p_[2] << "," :
-//                    dataFile
-//                            << 1.6 << ",";
-//                }
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RH) == 1) ? dataFile << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RH).p_[0] << "," :
+                dataFile << q_trajectory(current_trajectory_point_index,3*3 + 0) << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RH) == 1) ? dataFile << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RH).p_[1] << "," :
+                dataFile << -q_trajectory(current_trajectory_point_index,3*3 + 1) << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(RH) == 1) ? dataFile << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(RH).p_[2] << "," :
+                dataFile << -q_trajectory(current_trajectory_point_index,3*3 + 2) << ",";
+
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LH) == 1) ? dataFile << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LH).p_[0] << "," :
+                dataFile << q_trajectory(current_trajectory_point_index,2*3 + 0) << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LH) == 1) ? dataFile << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LH).p_[1] << "," :
+                dataFile << -q_trajectory(current_trajectory_point_index,2*3 + 1) << ",";
+                (final_trajectory.at(current_phase_start_index).ee_contact_.at(LH) == 1) ? dataFile << final_trajectory.at(current_trajectory_point_index).ee_motion_.at(LH).p_[2] << "," :
+                dataFile << -q_trajectory(current_trajectory_point_index,2*3 + 2) << ",";
                 dataFile << std::endl;
             }
             current_phase_start_index += horizons.at(i);
@@ -508,6 +561,20 @@ TowrRosInterface::SaveTrajectoryInRosbag (rosbag::Bag& bag,
     bag.write(xpp_msgs::terrain_info, timestamp, terrain_msg);
   }
 }
+
+    int TowrRosInterface::switch_leg_index_from_left_to_right(int xpp_leg_index) {
+        int nlp_leg_index = 0;
+        if (xpp_leg_index == 0) {        // 0 FL in vbmpc
+            nlp_leg_index = 1;          // 1 FL in control loop
+        } else if (xpp_leg_index == 1) {  // 1 FR in vbmpc
+            nlp_leg_index = 0;          // 0 FR in control loop
+        } else if (xpp_leg_index == 2) {  // 2 HL in vbmpc
+            nlp_leg_index = 3;          // 3 HL in control loop
+        } else {                           // 3 HR in vbmpc
+            nlp_leg_index = 2;          // 2 HR in control loop
+        }
+        return nlp_leg_index;
+    }
 
 } /* namespace towr */
 

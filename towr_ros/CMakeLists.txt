@@ -11,8 +11,9 @@ find_package(catkin REQUIRED COMPONENTS
   message_generation
   xpp_msgs
   xpp_states
+        xpp_vis
   towr
-        quad_msgs
+  quad_msgs
 )
 
 
@@ -28,7 +29,7 @@ generate_messages( DEPENDENCIES std_msgs xpp_msgs )
 catkin_package(
    INCLUDE_DIRS include
    LIBRARIES ${PROJECT_NAME}
-   CATKIN_DEPENDS xpp_states roscpp quad_msgs
+   CATKIN_DEPENDS xpp_states roscpp quad_msgs xpp_vis
    DEPENDS towr
 )
 
@@ -43,6 +44,10 @@ include_directories(
 # The interface to derive from for ros integration
 add_library(${PROJECT_NAME} SHARED
   src/towr_ros_interface.cc
+        src/mini_cheetah_leg_inverse_kinematics.cc
+        src/mini_cheetah_inverse_kinematics.cc
+        src/arcdog_inverse_kinematics.cc
+        src/arcdog_leg_inverse_kinematics.cc
 )
 add_dependencies(${PROJECT_NAME} 
   ${PROJECT_NAME}_gencpp

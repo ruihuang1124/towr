@@ -43,6 +43,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <towr/nlp_formulation.h>
 #include <ifopt/ipopt_solver.h>
 #include "quad_msgs/RobotState.h"
+#include "mini_cheetah_inverse_kinematics.h"
+#include "arcdog_inverse_kinematics.h"
 
 
 namespace towr {
@@ -91,12 +93,17 @@ protected:
    */
   virtual void SetIpoptParameters(const TowrCommandMsg& msg) = 0;
 
+  int switch_leg_index_from_left_to_right(int xpp_leg_index);
+
   NlpFormulation formulation_;         ///< the default formulation, can be adapted
   ifopt::IpoptSolver::Ptr solver_; ///< NLP solver, could also use SNOPT.
   TowrRobotStates robot_states_msgs_;
 
 private:
-  SplineHolder solution; ///< the solution splines linked to the opt-variables.
+    MiniCheetahInverseKinematics::Ptr mini_cheetah_inverse_kinematics_;
+    MiniCheetahInverseKinematics::Ptr arcdog_inverse_kinematics_;
+
+    SplineHolder solution; ///< the solution splines linked to the opt-variables.
   ifopt::Problem nlp_;   ///< the actual nonlinear program to be solved.
   double visualization_dt_; ///< duration between two rviz visualization states.
 //  Vector3d states_angular_;
